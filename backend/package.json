@@ -1,0 +1,40 @@
+{
+  "name": "restaurant-council-backend",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@drassos/api": "file:../../drassos-engine/packages/api",
+    "@drassos/core": "file:../../drassos-engine/packages/core",
+    "@drassos/engine": "file:../../drassos-engine/packages/engine",
+    "@drassos/node": "file:../../drassos-engine/packages/node",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@drassos/testing": "file:../../drassos-engine/packages/testing",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "@drassos/api": "file:../../drassos-engine/packages/api",
+    "@drassos/core": "file:../../drassos-engine/packages/core",
+    "@drassos/engine": "file:../../drassos-engine/packages/engine",
+    "@drassos/node": "file:../../drassos-engine/packages/node"
+  }
+}
