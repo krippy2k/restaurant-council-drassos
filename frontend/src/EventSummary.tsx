@@ -1,5 +1,5 @@
 import type { CouncilEvent, CreateEventCommand, EventConstraint } from "./api";
-import { formatEventWhen, formatMiles, milesFromMeters } from "./formatEvent";
+import { formatEventWhen, formatEventWhenLabel, formatMiles, milesFromMeters } from "./formatEvent";
 
 export function EventSummary({
   name,
@@ -7,14 +7,27 @@ export function EventSummary({
   location,
   radiusMiles,
   constraints,
+  compact = false,
 }: {
   name: string;
   date?: string;
   location: string;
   radiusMiles: number;
   constraints?: EventConstraint[];
+  compact?: boolean;
 }) {
   const when = formatEventWhen(date);
+  const constraintLabels = constraints?.map((constraint) => constraint.label).filter(Boolean) ?? [];
+  if (compact) {
+    const facts = [formatEventWhenLabel(date), location, formatMiles(radiusMiles)];
+    return (
+      <div className="event-card event-card-compact">
+        <strong>{name}</strong>
+        <p className="event-compact-line">{facts.join(" · ")}</p>
+        {constraintLabels.length > 0 ? <p className="event-compact-line event-meta">{constraintLabels.join(" · ")}</p> : null}
+      </div>
+    );
+  }
   return (
     <div className="event-card">
       <strong>{name}</strong>
@@ -38,10 +51,10 @@ export function EventSummary({
         <span className="event-label">Distance</span>
         {formatMiles(radiusMiles)}
       </p>
-      {constraints?.length ? (
+      {constraintLabels.length ? (
         <p className="event-row">
           <span className="event-label">Constraints</span>
-          {constraints.map((constraint) => constraint.label).join(", ")}
+          {constraintLabels.join(", ")}
         </p>
       ) : null}
     </div>

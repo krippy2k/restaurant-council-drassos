@@ -41,7 +41,16 @@ export type EventChatMessageView = EventChatMessage & {
   mine: boolean;
 };
 
+export const COUNCIL_CHAT_USER_ID = "council";
+
 async function toView(message: EventChatMessage, viewerId: string): Promise<EventChatMessageView> {
+  if (message.userId === COUNCIL_CHAT_USER_ID) {
+    return {
+      ...message,
+      userName: "The Council",
+      mine: false,
+    };
+  }
   const user = await getUserById(message.userId);
   return {
     ...message,
@@ -77,5 +86,19 @@ export async function addEventChatMessage(input: {
     messages.push(next);
     await saveMessages(messages);
     return next;
+  });
+}
+
+export async function addCouncilChatMessage(input: {
+  eventId: string;
+  body: string;
+  createdAt?: string;
+}): Promise<EventChatMessage> {
+  return addEventChatMessage({
+    id: crypto.randomUUID(),
+    eventId: input.eventId,
+    userId: COUNCIL_CHAT_USER_ID,
+    body: input.body,
+    createdAt: input.createdAt ?? new Date().toISOString(),
   });
 }

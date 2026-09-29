@@ -1,23 +1,29 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
+  decideRestaurant,
   verifyRestaurantConstraint,
   type ConstraintContactMethod,
   type ConstraintVerificationResult,
   type CouncilRestaurant,
+  type RestaurantDecisionKind,
 } from "./api";
 import { hoursForEventDay } from "./formatEvent";
+import { restaurantMenuHref, telHref } from "./restaurantLinks";
 
 type RestaurantCardProps = {
   restaurant: CouncilRestaurant;
   eventId?: string;
+  userId?: string;
   eventDate?: string;
   timezone?: string;
   onRestaurantChange?: (restaurant: CouncilRestaurant) => void;
+  onFeedbackStart?: () => void;
+  onCouncilResult?: (result: {
+    restaurant: CouncilRestaurant;
+    restaurants?: CouncilRestaurant[];
+    searchedAt?: string;
+  }) => void;
 };
-
-function firstName(name: string): string {
-  return name.trim().split(/\s+/)[0] || name;
-}
 
 const priceLabels: Record<string, string> = {
   PRICE_LEVEL_FREE: "Free",
@@ -39,12 +45,24 @@ function RatingStars({ rating }: { rating: number }) {
   );
 }
 
-export function RestaurantCard({ restaurant, eventId, eventDate, timezone, onRestaurantChange }: RestaurantCardProps) {
+export function RestaurantCard({
+  restaurant,
+  eventId,
+  userId,
+  eventDate,
+  timezone,
+  onRestaurantChange,
+  onFeedbackStart,
+  onCouncilResult,
+}: RestaurantCardProps) {
   const [open, setOpen] = useState(false);
   const [verifying, setVerifying] = useState<NonNullable<CouncilRestaurant["constraintChecks"]>[number] | null>(null);
+  const [deciding, setDeciding] = useState<RestaurantDecisionKind | null>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
   const lightbox = useRef<HTMLDialogElement>(null);
   const eventHours = hoursForEventDay(restaurant.hours, eventDate, timezone);
   const price = restaurant.priceLevel ? priceLabels[restaurant.priceLevel] ?? restaurant.priceLevel : undefined;
+  const menuHref = restaurantMenuHref(restaurant);
 
   function openPhoto() {
     lightbox.current?.showModal();
@@ -56,6 +74,28 @@ export function RestaurantCard({ restaurant, eventId, eventDate, timezone, onRes
     }
     lightbox.current?.close();
   }
+
+  async function chooseDecision(decision: RestaurantDecisionKind) {
+    if (!eventId || deciding) {
+      return;
+    }
+    setDeciding(decision);
+    setDecisionError(null);
+    onFeedbackStart?.();
+    try {
+      const result = await decideRestaurant(eventId, restaurant.placeId, decision);
+      onCouncilResult?.(result);
+      onRestaurantChange?.(result.restaurant);
+    } catch (err) {
+      setDecisionError(err instanceof Error ? err.message : "Could not save that decision.");
+    } finally {
+      setDeciding(null);
+    }
+  }
+
+  const myDecision =
+    restaurant.decisions?.find((item) => item.userId === userId)?.decision ??
+    restaurant.userScores?.find((item) => item.userId === userId)?.decision;
 
   return (
     <li className="restaurant-card">
@@ -86,6 +126,14 @@ export function RestaurantCard({ restaurant, eventId, eventDate, timezone, onRes
             ) : null}
           </div>
         ) : null}
+        <button
+          className="ghost restaurant-details-toggle"
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+        >
+          {open ? "Hide Details" : "View Details"}
+        </button>
       </div>
       {restaurant.photoUrl ? (
         <dialog
@@ -105,6 +153,25 @@ export function RestaurantCard({ restaurant, eventId, eventDate, timezone, onRes
       <div className="restaurant-copy">
         <strong>{restaurant.name}</strong>
         <span>{restaurant.address ?? "Address unknown"}</span>
+        {restaurant.phone ? (
+          <a className="restaurant-phone" href={telHref(restaurant.phone)}>
+            {restaurant.phone}
+          </a>
+        ) : null}
+        {restaurant.website || menuHref ? (
+          <div className="restaurant-links">
+            {restaurant.website ? (
+              <a className="ghost" href={restaurant.website} target="_blank" rel="noreferrer">
+                Website
+              </a>
+            ) : null}
+            {menuHref ? (
+              <a className="ghost" href={menuHref} target="_blank" rel="noreferrer">
+                View Menu
+              </a>
+            ) : null}
+          </div>
+        ) : null}
         <span>
           {eventHours
             ? eventHours
@@ -112,16 +179,6 @@ export function RestaurantCard({ restaurant, eventId, eventDate, timezone, onRes
               ? "Hours unknown for the event day"
               : "Set an event date to see hours for that day"}
         </span>
-        {restaurant.userScores && restaurant.userScores.length > 0 ? (
-          <ul className="restaurant-scores">
-            {restaurant.userScores.map((entry) => (
-              <li key={entry.userId} className="restaurant-score">
-                <span>{firstName(entry.userName)}</span>
-                <strong>{entry.score}</strong>
-              </li>
-            ))}
-          </ul>
-        ) : null}
         {restaurant.constraintChecks && restaurant.constraintChecks.length > 0 ? (
           <ul className="restaurant-constraints">
             {restaurant.constraintChecks.map((check) => (
@@ -162,14 +219,29 @@ export function RestaurantCard({ restaurant, eventId, eventDate, timezone, onRes
             ))}
           </ul>
         ) : null}
-        <button
-          className="ghost restaurant-details-toggle"
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen((current) => !current)}
-        >
-          {open ? "Hide Details" : "View Details"}
-        </button>
+        {eventId ? (
+          <div className="restaurant-actions">
+            {(
+              [
+                ["approve", "Approve"],
+                ["prefer", "Prefer"],
+                ["dislike", "Dislike"],
+                ["reject", "Reject"],
+              ] as const
+            ).map(([kind, label]) => (
+              <button
+                key={kind}
+                className={myDecision === kind ? "primary" : "ghost"}
+                type="button"
+                disabled={Boolean(deciding)}
+                onClick={() => void chooseDecision(kind)}
+              >
+                {deciding === kind ? `${label}…` : label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {decisionError ? <p className="error">{decisionError}</p> : null}
       </div>
       {open ? (
         <div className="restaurant-details">
@@ -193,10 +265,12 @@ export function RestaurantCard({ restaurant, eventId, eventDate, timezone, onRes
           constraint={verifying}
           eventId={eventId}
           onClose={() => setVerifying(null)}
-          onSaved={(next) => {
+          onSaved={(result) => {
             setVerifying(null);
-            onRestaurantChange?.(next);
+            onCouncilResult?.(result);
+            onRestaurantChange?.(result.restaurant);
           }}
+          onFeedbackStart={onFeedbackStart}
         />
       ) : null}
     </li>
@@ -217,12 +291,18 @@ function VerifyConstraintDialog({
   eventId,
   onClose,
   onSaved,
+  onFeedbackStart,
 }: {
   restaurant: CouncilRestaurant;
   constraint: NonNullable<CouncilRestaurant["constraintChecks"]>[number];
   eventId: string;
   onClose: () => void;
-  onSaved: (restaurant: CouncilRestaurant) => void;
+  onSaved: (result: {
+    restaurant: CouncilRestaurant;
+    restaurants?: CouncilRestaurant[];
+    searchedAt?: string;
+  }) => void;
+  onFeedbackStart?: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [result, setResult] = useState<ConstraintVerificationResult | "">("");
@@ -257,6 +337,7 @@ function VerifyConstraintDialog({
     }
     setSaving(true);
     setError(null);
+    onFeedbackStart?.();
     try {
       const saved = await verifyRestaurantConstraint(eventId, restaurant.placeId, {
         constraintId: constraint.id,
@@ -264,7 +345,7 @@ function VerifyConstraintDialog({
         method,
         notes: notes.trim() || undefined,
       });
-      onSaved(saved.restaurant);
+      onSaved(saved);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save that verification.");
     } finally {

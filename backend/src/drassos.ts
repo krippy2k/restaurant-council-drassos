@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApi, listenApi } from "@drassos/api";
@@ -20,6 +21,8 @@ import { loginUserWorkflow, type LoginUserInput } from "./workflows/loginUser.js
 import { logoutUserWorkflow, type LogoutUserInput } from "./workflows/logoutUser.js";
 import { registerUserWorkflow, type RegisterUserInput } from "./workflows/registerUser.js";
 import { startCouncilWorkflow, type StartCouncilInput } from "./workflows/startCouncil.js";
+import { decideRestaurantWorkflow, type DecideRestaurantInput } from "./workflows/decideRestaurant.js";
+import { agentChatRequestWorkflow, type AgentChatRequestInput } from "./workflows/agentChat.js";
 import { setCouncilProgress } from "./councilProgress.js";
 import { updateEventWorkflow } from "./workflows/updateEvent.js";
 import type { PublicUser } from "./types.js";
@@ -40,27 +43,63 @@ export type WorkflowSnapshot = {
 };
 
 let runtime: Drassos | undefined;
+let starting: Promise<Drassos> | undefined;
 let consoleServer: { port: number; close: () => Promise<void> } | undefined;
 
 export async function getDrassos(): Promise<Drassos> {
-  if (!runtime) {
-    const app = createCouncilApp();
-    if (!app.models?.openai && !process.env.OPENAI_API_KEY) {
-      throw new Error("Set OPENAI_API_KEY so the Create Event agent can interpret chat messages.");
-    }
-    runtime = new Drassos({
-      inMemory: process.env.DRASSOS_IN_MEMORY === "true",
-      databaseUrl: process.env.DATABASE_URL,
-      dataDir,
-      pollMs: 50,
-      allowReplace: true,
-      logLevel: process.env.DRASSOS_LOG_LEVEL ?? "info",
-      app,
-    });
-    await runtime.start();
-    await startConsole(runtime);
+  if (runtime) {
+    return runtime;
   }
-  return runtime;
+  if (!starting) {
+    starting = startRuntime().catch((error) => {
+      starting = undefined;
+      runtime = undefined;
+      throw error;
+    });
+  }
+  return starting;
+}
+
+export function clearStalePgliteLock(root: string, pidAlive: (pid: number) => boolean = processExists): void {
+  const pidFile = path.join(root, "pglite", "postmaster.pid");
+  if (!existsSync(pidFile)) {
+    return;
+  }
+  const pid = Number(readFileSync(pidFile, "utf8").split(/\r?\n/)[0]?.trim());
+  if (Number.isInteger(pid) && pid > 0 && pidAlive(pid)) {
+    return;
+  }
+  unlinkSync(pidFile);
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function startRuntime(): Promise<Drassos> {
+  const app = createCouncilApp();
+  if (!app.models?.openai && !process.env.OPENAI_API_KEY) {
+    throw new Error("Set OPENAI_API_KEY so the Create Event agent can interpret chat messages.");
+  }
+  clearStalePgliteLock(dataDir);
+  const instance = new Drassos({
+    inMemory: process.env.DRASSOS_IN_MEMORY === "true",
+    databaseUrl: process.env.DATABASE_URL,
+    dataDir,
+    pollMs: 50,
+    allowReplace: true,
+    logLevel: process.env.DRASSOS_LOG_LEVEL ?? "info",
+    app,
+  });
+  await instance.start();
+  await startConsole(instance);
+  runtime = instance;
+  return instance;
 }
 
 export async function startCreateEventWorkflow(input: CreateEventInput): Promise<WorkflowSnapshot> {
@@ -290,6 +329,38 @@ export async function runStartCouncilWorkflow(input: StartCouncilInput) {
   }
 }
 
+export async function runAgentChatRequestWorkflow(input: AgentChatRequestInput) {
+  const drassos = await getDrassos();
+  drassos.register(agentChatRequestWorkflow);
+  await drassos.start();
+  const result = await drassos.execute(agentChatRequestWorkflow, input, { timeoutMs: 90_000 });
+  if (result.status !== "COMPLETED" || result.output == null) {
+    throw workflowFailure(result.error?.message, "Could not answer that chat request.", {
+      "Start the message": 400,
+      "not found": 404,
+      "another host": 403,
+    });
+  }
+  return result.output;
+}
+
+export async function runDecideRestaurantWorkflow(input: DecideRestaurantInput) {
+  const drassos = await getDrassos();
+  drassos.register(decideRestaurantWorkflow);
+  await drassos.start();
+  const result = await drassos.execute(decideRestaurantWorkflow, input, { timeoutMs: 30_000 });
+  if (result.status !== "COMPLETED" || result.output == null) {
+    throw workflowFailure(result.error?.message, "Could not save that restaurant decision.", {
+      "Choose Approve": 400,
+      "Choose a restaurant": 400,
+      "not found": 404,
+      "another host": 403,
+      "Start Council": 404,
+    });
+  }
+  return result.output.restaurant;
+}
+
 export async function getCreateEventSnapshot(runId: string, ownerId: string): Promise<WorkflowSnapshot> {
   const drassos = await getDrassos();
   await assertOwner(drassos, runId, ownerId);
@@ -297,8 +368,9 @@ export async function getCreateEventSnapshot(runId: string, ownerId: string): Pr
 }
 
 export async function stopDrassos(): Promise<void> {
+  starting = undefined;
   if (consoleServer) {
-    await consoleServer.close();
+    await consoleServer.close().catch(() => undefined);
     consoleServer = undefined;
   }
   if (runtime) {
@@ -318,6 +390,17 @@ function workflowFailure(
   return Object.assign(new Error(text), { status });
 }
 
+function isPortInUse(port: number, host = "127.0.0.1"): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host });
+    socket.once("connect", () => {
+      socket.end();
+      resolve(true);
+    });
+    socket.once("error", () => resolve(false));
+  });
+}
+
 async function startConsole(drassos: Drassos): Promise<void> {
   if (process.env.DRASSOS_CONSOLE === "false") {
     return;
@@ -329,6 +412,10 @@ async function startConsole(drassos: Drassos): Promise<void> {
     );
   }
   const port = Number(process.env.DRASSOS_PORT ?? 3100);
+  if (await isPortInUse(port)) {
+    console.warn(`Drassos Console port ${port} is already in use; skipping.`);
+    return;
+  }
   try {
     consoleServer = await listenApi(createApi({ drassos: drassos.runtime(), consoleDir }), { port });
     console.log(

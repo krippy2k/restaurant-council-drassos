@@ -1,4 +1,5 @@
 import type { ConstraintVerification } from "./verifyConstraint.js";
+import type { RestaurantDecision, RestaurantDecisionKind } from "./restaurantDecision.js";
 import type { Event, EventConstraint, Preference } from "./types.js";
 import {
   assessmentIsUnsupported,
@@ -27,6 +28,7 @@ export type PlaceRestaurant = {
   website?: string;
   phone?: string;
   email?: string;
+  menuUrl?: string;
   reviews?: Array<{ text: string; authorName?: string; publishedAt?: string }>;
   dietaryAssessments?: DietaryAssessment[];
 };
@@ -36,6 +38,7 @@ export type CouncilRestaurant = PlaceRestaurant & {
   userScores?: UserRestaurantScore[];
   constraintFlags?: RestaurantConstraintFlag[];
   constraintChecks?: RestaurantConstraintCheck[];
+  decisions?: RestaurantDecision[];
   councilScore?: number;
   explanations?: string[];
   picked?: boolean;
@@ -59,6 +62,8 @@ export type UserRestaurantScore = {
   userId: string;
   userName: string;
   score: number;
+  baseScore?: number;
+  decision?: RestaurantDecisionKind;
 };
 
 export type CouncilParticipant = {

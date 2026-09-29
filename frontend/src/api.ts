@@ -280,6 +280,8 @@ export type ConstraintVerification = {
   summary: string;
 };
 
+export type RestaurantDecisionKind = "approve" | "reject" | "prefer" | "dislike";
+
 export type CouncilRestaurant = {
   placeId: string;
   name: string;
@@ -296,7 +298,14 @@ export type CouncilRestaurant = {
   website?: string;
   phone?: string;
   email?: string;
-  userScores?: Array<{ userId: string; userName: string; score: number }>;
+  menuUrl?: string;
+  userScores?: Array<{
+    userId: string;
+    userName: string;
+    score: number;
+    baseScore?: number;
+    decision?: RestaurantDecisionKind;
+  }>;
   dietaryAssessments?: Array<{
     requirement: string;
     status: "confirmed" | "likely" | "uncertain" | "unsupported" | "conflicting";
@@ -312,6 +321,13 @@ export type CouncilRestaurant = {
     confirmed: boolean;
     confirmation?: string;
     verifications?: ConstraintVerification[];
+  }>;
+  decisions?: Array<{
+    userId: string;
+    userName: string;
+    decision: RestaurantDecisionKind;
+    baseScore: number;
+    at: string;
   }>;
   councilScore?: number;
   explanations?: string[];
@@ -340,11 +356,21 @@ export function verifyRestaurantConstraint(
     notes?: string;
   },
 ) {
-  return request<{ restaurant: CouncilRestaurant }>(
+  return request<{ restaurant: CouncilRestaurant; restaurants?: CouncilRestaurant[]; searchedAt?: string }>(
     `/api/events/${eventId}/restaurants/${encodeURIComponent(placeId)}/verify`,
     {
       method: "POST",
       body: JSON.stringify(body),
+    },
+  );
+}
+
+export function decideRestaurant(eventId: string, placeId: string, decision: RestaurantDecisionKind) {
+  return request<{ restaurant: CouncilRestaurant; restaurants?: CouncilRestaurant[]; searchedAt?: string }>(
+    `/api/events/${eventId}/restaurants/${encodeURIComponent(placeId)}/decide`,
+    {
+      method: "POST",
+      body: JSON.stringify({ decision }),
     },
   );
 }

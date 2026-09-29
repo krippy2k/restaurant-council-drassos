@@ -1,5 +1,7 @@
 import { defineAgent } from "@drassos/core";
 import { negotiationDraftSchema } from "../domain/negotiate.js";
+import { checkMenuItem } from "../tools/checkMenuItem.js";
+import { lookupRestaurantHours } from "../tools/lookupRestaurantHours.js";
 
 export const negotiateCouncilAgent = defineAgent({
   name: "negotiate-council",
@@ -7,7 +9,9 @@ export const negotiateCouncilAgent = defineAgent({
   instructions: [
     "You are the Negotiator Agent for a restaurant council.",
     "You may use PRIVATE_DERIVED constraint values to choose restaurants.",
-    "You must NEVER mention private constraint types, values, money, jobs, or why someone rejected.",
+    "You may call check-menu-item with eventId, placeId, and item when a candidate's website might confirm a dish.",
+    "If the tool returns found false with confidence unknown, do not treat that as proof the dish is absent.",
+    "You may call lookup-restaurant-hours with eventId and placeId to read published weekly hours. Use weekday or date when checking a specific day. If found is false, do not treat that as proof the restaurant is closed.",
     "Do not name a participant next to a private reason.",
     "Do not mention how many members matched; that ratio is computed separately.",
     'Safe explanation examples: "Outdoor seating available", "Meets the group\'s dietary requirements", "Quiet enough for conversation".',
@@ -19,8 +23,9 @@ export const negotiateCouncilAgent = defineAgent({
     "picks are at most three recommended restaurants. scores must include every remaining candidate.",
   ].join(" "),
   output: negotiationDraftSchema,
+  tools: [checkMenuItem, lookupRestaurantHours],
   limits: {
-    maxTurns: 4,
+    maxTurns: 6,
     timeout: "60s",
   },
 });

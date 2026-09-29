@@ -32,7 +32,7 @@ export function EventPage({ onSignOut }: EventPageProps) {
   const navigate = useNavigate();
   const [user, setUser] = useState<PublicUser | null>(null);
   const [event, setEvent] = useState<CouncilEvent | null>(null);
-  const [mode, setMode] = useState<"form" | "chat">("form");
+  const [mode, setMode] = useState<"form" | "chat">("chat");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteRun, setDeleteRun] = useState<WorkflowSnapshot | null>(null);
   const [name, setName] = useState("");
@@ -405,28 +405,6 @@ export function EventPage({ onSignOut }: EventPageProps) {
 
         <section className="event-form invite-section">
           <h2 className="events-heading">Invite people</h2>
-          <form
-            className="invite-form"
-            onSubmit={(formEvent) => {
-              formEvent.preventDefault();
-              void sendInvite({ email: inviteEmail });
-            }}
-          >
-            <label>
-              Invite by email
-              <input
-                type="email"
-                value={inviteEmail}
-                onChange={(formEvent) => setInviteEmail(formEvent.target.value)}
-                placeholder="guest@example.com"
-                required
-              />
-            </label>
-            <button className="primary" type="submit" disabled={busy}>
-              Send invite
-            </button>
-          </form>
-
           {contacts.length > 0 ? (
             <form
               className="invite-form"
@@ -451,6 +429,28 @@ export function EventPage({ onSignOut }: EventPageProps) {
               </button>
             </form>
           ) : null}
+
+          <form
+            className="invite-form"
+            onSubmit={(formEvent) => {
+              formEvent.preventDefault();
+              void sendInvite({ email: inviteEmail });
+            }}
+          >
+            <label>
+              Invite by email
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={(formEvent) => setInviteEmail(formEvent.target.value)}
+                placeholder="guest@example.com"
+                required
+              />
+            </label>
+            <button className="primary" type="submit" disabled={busy}>
+              Send invite
+            </button>
+          </form>
 
           <form className="invite-form" onSubmit={saveContact}>
             <label>

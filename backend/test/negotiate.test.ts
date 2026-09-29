@@ -47,4 +47,64 @@ describe("negotiator explanations", () => {
     expect(parsed.picks).toEqual([{ candidateId: "cheap", explanations: ["Outdoor seating available"] }]);
     expect(parsed.scores).toEqual([]);
   });
+
+  it("does not claim all hard constraints are met when gluten-free is unconfirmed", () => {
+    const ranked = applyNegotiatorPicks(
+      [
+        {
+          placeId: "noodles",
+          name: "Noodle Shop",
+          matched: true,
+          userScores: [{ userId: "ada", userName: "Ada", score: 80 }],
+          constraintChecks: [{ id: "p1", label: "Gluten free", confirmed: false }],
+        },
+      ],
+      { picks: [], scores: [] },
+    );
+    expect(ranked[0]?.explanations ?? []).not.toContain("Within everyone's hard constraints");
+  });
+
+  it("does not let the model claim hard constraints when gluten-free is unconfirmed", () => {
+    const ranked = applyNegotiatorPicks(
+      [
+        {
+          placeId: "noodles",
+          name: "Noodle Shop",
+          matched: true,
+          userScores: [{ userId: "ada", userName: "Ada", score: 80 }],
+          constraintChecks: [{ id: "p1", label: "Gluten free", confirmed: false }],
+        },
+      ],
+      {
+        picks: [
+          {
+            candidateId: "noodles",
+            explanations: ["Within everyone's hard constraints", "Outdoor seating available"],
+            score: 88,
+          },
+        ],
+        scores: [],
+      },
+    );
+    expect(ranked[0]?.explanations ?? []).not.toContain("Within everyone's hard constraints");
+    expect(ranked[0]?.explanations).toContain("Outdoor seating available");
+  });
+
+  it("claims all hard constraints only after every public hard check is confirmed", () => {
+    const ranked = applyNegotiatorPicks(
+      [
+        {
+          placeId: "noodles",
+          name: "Noodle Shop",
+          matched: true,
+          userScores: [{ userId: "ada", userName: "Ada", score: 90 }],
+          constraintChecks: [
+            { id: "p1", label: "Gluten free", confirmed: true, confirmation: "Confirmed by the menu" },
+          ],
+        },
+      ],
+      { picks: [], scores: [] },
+    );
+    expect(ranked[0]?.explanations).toContain("Within everyone's hard constraints");
+  });
 });

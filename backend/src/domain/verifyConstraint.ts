@@ -50,6 +50,28 @@ export function verificationSummary(input: {
   return notes ? `${base} ${notes}` : base;
 }
 
+export function councilVerificationChat(input: {
+  userName: string;
+  restaurantName: string;
+  constraintLabel: string;
+  result: ConstraintVerificationResult;
+  method: ConstraintContactMethod;
+  notes?: string;
+}): string {
+  const who = input.userName.trim() || "A participant";
+  const place = input.restaurantName.trim() || "a restaurant";
+  const constraint = input.constraintLabel.trim() || "a constraint";
+  const via = METHOD_PHRASE[input.method];
+  const base =
+    input.result === "meets"
+      ? `${who} confirmed ${constraint} at ${place} ${via}.`
+      : input.result === "does_not_meet"
+        ? `${who} confirmed ${place} does not meet ${constraint} ${via}.`
+        : `${who} checked ${constraint} at ${place} ${via}; it is still unknown.`;
+  const notes = input.notes?.trim();
+  return notes ? `${base} ${notes}` : base;
+}
+
 export function applyVerificationToCheck(
   check: RestaurantConstraintCheck,
   verification: ConstraintVerification,

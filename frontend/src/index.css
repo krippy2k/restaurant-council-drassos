@@ -11,6 +11,8 @@
   --paper: #f4eadc;
   --muted: #c9b6a6;
   --danger: #f0a090;
+  --moss: #7dba8a;
+  --moss-dim: rgba(125, 186, 138, 0.16);
   font-family: Outfit, "Segoe UI", sans-serif;
   line-height: 1.5;
   font-weight: 400;
@@ -116,7 +118,8 @@ label {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   border: 1px solid var(--line);
   background: rgba(0, 0, 0, 0.22);
@@ -126,8 +129,24 @@ textarea {
   outline: none;
 }
 
+select {
+  min-height: 46px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23e8c9a0' d='M1.2 1.3 6 6.1l4.8-4.8 1.2 1.2L6 8.5 0 2.5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 12px;
+  padding-right: 40px;
+}
+
+select option {
+  background: var(--panel-2);
+  color: var(--paper);
+}
+
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   border-color: var(--gold-2);
 }
 
@@ -313,6 +332,17 @@ a.ghost {
   border: 1px solid var(--line);
 }
 
+.bubble.from-council {
+  margin-right: auto;
+  background: var(--moss-dim);
+  border: 1px solid color-mix(in srgb, var(--moss) 45%, var(--line));
+  color: #e4f3e7;
+}
+
+.bubble.from-council .who {
+  color: var(--moss);
+}
+
 .bubble .who {
   display: block;
   font-size: 0.72rem;
@@ -325,6 +355,26 @@ a.ghost {
 .event-card {
   display: grid;
   gap: 10px;
+}
+
+.event-card-compact {
+  gap: 4px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-2) 80%, transparent);
+}
+
+.event-card-compact strong {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.event-compact-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
 }
 
 .event-card p {
@@ -474,6 +524,15 @@ a.primary {
 
 .invite-actions textarea {
   min-height: 72px;
+}
+
+.restaurant-group {
+  display: grid;
+  gap: 12px;
+}
+
+.restaurant-group .events-heading {
+  margin: 0;
 }
 
 .council-page {
@@ -652,6 +711,28 @@ a.primary {
   border: 1px dashed var(--line);
 }
 
+.restaurant-phone {
+  color: var(--gold);
+  font-size: 0.92rem;
+  text-decoration: none;
+}
+
+.restaurant-phone:hover {
+  text-decoration: underline;
+}
+
+.restaurant-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.restaurant-links .ghost {
+  padding: 6px 10px;
+  font-size: 0.82rem;
+}
+
 .restaurant-copy {
   display: grid;
   gap: 4px;
@@ -666,9 +747,24 @@ a.primary {
 }
 
 .restaurant-details-toggle {
-  justify-self: start;
-  margin-top: 6px;
+  justify-self: center;
+  margin-top: 2px;
+  padding: 3px 7px;
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.restaurant-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.restaurant-actions .ghost,
+.restaurant-actions .primary {
   padding: 6px 10px;
+  font-size: 0.82rem;
 }
 
 .restaurant-details {
@@ -685,36 +781,6 @@ a.primary {
   padding: 0;
   display: grid;
   gap: 2px;
-}
-
-.restaurant-scores {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.restaurant-score {
-  display: grid;
-  justify-items: center;
-  gap: 2px;
-  min-width: 52px;
-  padding: 6px 8px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-}
-
-.restaurant-score span {
-  font-size: 0.78rem;
-  color: var(--muted);
-}
-
-.restaurant-score strong {
-  font-variant-numeric: tabular-nums;
-  font-size: 1rem;
 }
 
 .restaurant-pick {
@@ -897,5 +963,9 @@ a.primary {
   .restaurant-final-score,
   .restaurant-rating {
     text-align: center;
+  }
+
+  .restaurant-details-toggle {
+    justify-self: start;
   }
 }

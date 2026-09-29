@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addEventChatMessage, listEventChat } from "../src/chat.ts";
+import { addCouncilChatMessage, addEventChatMessage, listEventChat } from "../src/chat.ts";
 
 describe("event chat", () => {
   it("stores messages for an event in order", async () => {
@@ -23,5 +23,20 @@ describe("event chat", () => {
     expect(messages.map((item) => item.body)).toEqual(["Hello table", "Hi Ada"]);
     expect(messages[0]).toMatchObject({ id: first.id, mine: true });
     expect(messages[1]?.mine).toBe(false);
+  });
+
+  it("posts Council notices with the Council display name", async () => {
+    const eventId = crypto.randomUUID();
+    await addCouncilChatMessage({
+      eventId,
+      body: "Ada Chen approved Noodle Shop.",
+      createdAt: "2026-09-19T21:02:00.000Z",
+    });
+    const messages = await listEventChat(eventId, "user_ada");
+    expect(messages[0]).toMatchObject({
+      body: "Ada Chen approved Noodle Shop.",
+      userName: "The Council",
+      mine: false,
+    });
   });
 });

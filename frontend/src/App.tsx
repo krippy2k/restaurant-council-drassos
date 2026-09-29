@@ -24,19 +24,22 @@ export default function App() {
       });
   }, []);
 
-  if (!token) {
-    return <AuthScreen onAuthenticated={handleAuthenticated} />;
-  }
-
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Dashboard onSignOut={handleSignOut} />} />
-        <Route path="/new" element={<ChatScreen onSignOut={handleSignOut} />} />
-        <Route path="/events/:eventId" element={<EventPage onSignOut={handleSignOut} />} />
-        <Route path="/events/:eventId/council" element={<CouncilPage onSignOut={handleSignOut} />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      {token ? (
+        <Routes>
+          <Route path="/" element={<Dashboard onSignOut={handleSignOut} />} />
+          <Route path="/new" element={<ChatScreen onSignOut={handleSignOut} />} />
+          <Route path="/events/:eventId" element={<EventPage onSignOut={handleSignOut} />} />
+          <Route path="/events/:eventId/council" element={<CouncilPage onSignOut={handleSignOut} />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      ) : (
+        <>
+          <Navigate to="/" replace />
+          <AuthScreen onAuthenticated={handleAuthenticated} />
+        </>
+      )}
     </BrowserRouter>
   );
 }

@@ -16,7 +16,18 @@ import {
   type PublicUser,
 } from "./api";
 import { ConstraintsList } from "./ConstraintsList";
-import { RestaurantCard } from "./RestaurantCard";
+import { EventSummary, summaryFromEvent } from "./EventSummary";
+import { AlsoConsidered, CouncilPicks } from "./RestaurantGroup";
+
+function chatBubbleClass(message: EventChatMessage): string {
+  if (message.mine) {
+    return "bubble user";
+  }
+  if (message.userId === "council") {
+    return "bubble from-council";
+  }
+  return "bubble council";
+}
 
 type CouncilPageProps = {
   onSignOut: () => void;
@@ -60,6 +71,9 @@ export function CouncilPage({ onSignOut }: CouncilPageProps) {
         setSearchedAt(result.searchedAt);
       })
       .catch(() => undefined);
+    fetchCouncilProgress(eventId)
+      .then((result) => applyProgress(result.progress))
+      .catch(() => undefined);
   }, [eventId]);
 
   useEffect(() => {
@@ -68,6 +82,15 @@ export function CouncilPage({ onSignOut }: CouncilPageProps) {
     }
     const timer = window.setInterval(() => {
       void loadChat(eventId);
+      fetchRestaurants(eventId)
+        .then((result) => {
+          setRestaurants(result.restaurants);
+          setSearchedAt(result.searchedAt);
+        })
+        .catch(() => undefined);
+      fetchCouncilProgress(eventId)
+        .then((result) => applyProgress(result.progress))
+        .catch(() => undefined);
     }, 3000);
     return () => window.clearInterval(timer);
   }, [eventId]);
@@ -86,6 +109,39 @@ export function CouncilPage({ onSignOut }: CouncilPageProps) {
     } catch {
       // Keep the last transcript if a poll fails.
     }
+  }
+
+  function applyProgress(next: CouncilProgress | null | undefined) {
+    if (next?.status === "RUNNING") {
+      setProgress(next);
+      setStarting(true);
+    } else if (next?.status === "COMPLETED") {
+      setProgress(null);
+      setStarting(false);
+    }
+  }
+
+  function applyCouncilResult(result: {
+    restaurant?: CouncilRestaurant;
+    restaurants?: CouncilRestaurant[];
+    searchedAt?: string | null;
+  }) {
+    if (result.restaurants) {
+      setRestaurants(result.restaurants);
+      setSearchedAt(result.searchedAt ?? null);
+    } else if (result.restaurant) {
+      setRestaurants((current) =>
+        current.map((item) => (item.placeId === result.restaurant!.placeId ? result.restaurant! : item)),
+      );
+    }
+    setProgress(null);
+    setStarting(false);
+  }
+
+  function beginFeedback() {
+    setStarting(true);
+    setError(null);
+    setProgress({ eventId, status: "RUNNING", agent: "Council Clerk", tool: "Reconvening" });
   }
 
   async function beginCouncil() {
@@ -110,9 +166,7 @@ export function CouncilPage({ onSignOut }: CouncilPageProps) {
     const timer = window.setInterval(poll, 400);
     try {
       const result = await startCouncil(eventId);
-      setRestaurants(result.restaurants);
-      setSearchedAt(result.searchedAt);
-      setProgress(null);
+      applyCouncilResult(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start Council.");
     } finally {
@@ -177,6 +231,8 @@ export function CouncilPage({ onSignOut }: CouncilPageProps) {
       <main className="council-page">
         {error ? <p className="error">{error}</p> : null}
 
+        {event ? <EventSummary compact {...summaryFromEvent(event)} /> : null}
+
         <ConstraintsList
           preferences={preferences}
           emptyText="No constraints yet. Add them on the event page."
@@ -189,7 +245,7 @@ export function CouncilPage({ onSignOut }: CouncilPageProps) {
               <p className="lede">No messages yet. Say hello to the table.</p>
             ) : (
               messages.map((message) => (
-                <div key={message.id} className={message.mine ? "bubble user" : "bubble council"}>
+                <div key={message.id} className={chatBubbleClass(message)}>
                   <span className="who">{message.mine ? "You" : message.userName}</span>
                   {message.body}
                 </div>
@@ -201,7 +257,7 @@ export function CouncilPage({ onSignOut }: CouncilPageProps) {
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={onComposerKeyDown}
-              placeholder="Write a message. Enter sends, Shift+Enter starts a new line."
+              placeholder="Write a message, or ask @agent or @council. Enter sends, Shift+Enter starts a new line."
               required
             />
             <button className="primary" type="submit" disabled={busy}>
@@ -222,52 +278,7 @@ export function CouncilPage({ onSignOut }: CouncilPageProps) {
               <span>{progress.tool}</span>
             </p>
           ) : null}
-          {starting ? null : restaurants.length > 0 ? (
-            <>
-              {picks.length > 0 ? (
-                <>
-                  <h2 className="events-heading">Council Picks</h2>
-                  <ul className="event-list restaurant-list">
-                    {picks.map((restaurant) => (
-                      <RestaurantCard
-                        key={restaurant.placeId}
-                        restaurant={restaurant}
-                        eventId={eventId}
-                        eventDate={event?.date}
-                        timezone={event?.timezone}
-                        onRestaurantChange={(next) =>
-                          setRestaurants((current) =>
-                            current.map((item) => (item.placeId === next.placeId ? next : item)),
-                          )
-                        }
-                      />
-                    ))}
-                  </ul>
-                </>
-              ) : null}
-              {alsoConsidered.length > 0 ? (
-                <>
-                  <h2 className="events-heading">Also considered</h2>
-                  <ul className="event-list restaurant-list">
-                    {alsoConsidered.map((restaurant) => (
-                      <RestaurantCard
-                        key={restaurant.placeId}
-                        restaurant={restaurant}
-                        eventId={eventId}
-                        eventDate={event?.date}
-                        timezone={event?.timezone}
-                        onRestaurantChange={(next) =>
-                          setRestaurants((current) =>
-                            current.map((item) => (item.placeId === next.placeId ? next : item)),
-                          )
-                        }
-                      />
-                    ))}
-                  </ul>
-                </>
-              ) : null}
-            </>
-          ) : (
+          {restaurants.length > 0 || starting ? null : (
             <p className="lede">
               {searchedAt
                 ? "No restaurants in the search area survived the required constraints."
@@ -275,6 +286,24 @@ export function CouncilPage({ onSignOut }: CouncilPageProps) {
             </p>
           )}
         </section>
+        <CouncilPicks
+          restaurants={picks}
+          eventId={eventId}
+          userId={user?.id}
+          eventDate={event?.date}
+          timezone={event?.timezone}
+          onFeedbackStart={beginFeedback}
+          onCouncilResult={applyCouncilResult}
+        />
+        <AlsoConsidered
+          restaurants={alsoConsidered}
+          eventId={eventId}
+          userId={user?.id}
+          eventDate={event?.date}
+          timezone={event?.timezone}
+          onFeedbackStart={beginFeedback}
+          onCouncilResult={applyCouncilResult}
+        />
       </main>
     </div>
   );

@@ -14,7 +14,9 @@ import {
   listPendingInvitationsForUser,
   toInvitationView,
 } from "./invitations.js";
-import { addEventChatMessage, listEventChat } from "./chat.js";
+import { listEventChat } from "./chat.js";
+import { parseAgentChatRequest } from "./domain/agentChat.js";
+import { eventChat } from "./tools/chat.js";
 import { addConstraintVerification, getRestaurantsForEvent } from "./restaurants.js";
 import { getCouncilProgress } from "./councilProgress.js";
 import {
@@ -23,6 +25,7 @@ import {
 } from "./domain/verifyConstraint.js";
 import { listVisiblePreferences } from "./preferences.js";
 import { isEventMember } from "./members.js";
+import { attachReconvenedCouncil } from "./reconveneCouncil.js";
 import {
   decideCreateEventWorkflow,
   getCreateEventSnapshot,
@@ -31,6 +34,8 @@ import {
   runAddContactWorkflow,
   runAddEventPreferencesWorkflow,
   runStartCouncilWorkflow,
+  runAgentChatRequestWorkflow,
+  runDecideRestaurantWorkflow,
   decideInviteToEventWorkflow,
   startInviteToEventWorkflow,
   runLoginUserWorkflow,
@@ -38,6 +43,7 @@ import {
   runRegisterUserWorkflow,
   startCreateEventWorkflow,
   startDeleteEventWorkflow,
+  stopDrassos,
 } from "./drassos.js";
 
 const app = express();
@@ -214,14 +220,31 @@ app.get("/api/events/:eventId/chat", requireAuth, async (req, res) => {
 app.post("/api/events/:eventId/chat", requireAuth, async (req, res) => {
   try {
     await requireEventAccess(String(req.params.eventId), req.user!.id, req.user!.email);
-    await addEventChatMessage({
-      id: crypto.randomUUID(),
-      eventId: String(req.params.eventId),
+    const eventId = String(req.params.eventId);
+    const body = String((req.body as { message?: string }).message ?? "");
+    await eventChat.execute({
+      eventId,
       userId: req.user!.id,
-      body: String((req.body as { message?: string }).message ?? ""),
-      createdAt: new Date().toISOString(),
+      body,
+      as: "user",
     });
-    res.status(201).json({ messages: await listEventChat(String(req.params.eventId), req.user!.id) });
+    if (parseAgentChatRequest(body)) {
+      try {
+        await runAgentChatRequestWorkflow({
+          eventId,
+          userId: req.user!.id,
+          message: body,
+        });
+      } catch (error) {
+        console.error("agent-chat-request failed", error);
+        await eventChat.execute({
+          eventId,
+          body: "I couldn't finish that request. You can try again.",
+          as: "council",
+        });
+      }
+    }
+    res.status(201).json({ messages: await listEventChat(eventId, req.user!.id) });
   } catch (error) {
     sendError(res, error);
   }
@@ -268,7 +291,37 @@ app.post("/api/events/:eventId/restaurants/:placeId/verify", requireAuth, async 
       userId: req.user!.id,
       userName: req.user!.name,
     });
-    res.json({ restaurant });
+    res.json(
+      await attachReconvenedCouncil(
+        String(req.params.eventId),
+        req.user!.id,
+        { restaurant },
+        runStartCouncilWorkflow,
+      ),
+    );
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.post("/api/events/:eventId/restaurants/:placeId/decide", requireAuth, async (req, res) => {
+  try {
+    await requireEventAccess(String(req.params.eventId), req.user!.id, req.user!.email);
+    const decision = String((req.body as { decision?: string }).decision ?? "").trim();
+    const restaurant = await runDecideRestaurantWorkflow({
+      eventId: String(req.params.eventId),
+      placeId: String(req.params.placeId),
+      userId: req.user!.id,
+      decision,
+    });
+    res.json(
+      await attachReconvenedCouncil(
+        String(req.params.eventId),
+        req.user!.id,
+        { restaurant },
+        runStartCouncilWorkflow,
+      ),
+    );
   } catch (error) {
     sendError(res, error);
   }
@@ -448,7 +501,15 @@ app.listen(port, () => {
   console.log(`Restaurant Council API on http://127.0.0.1:${port}`);
   void getDrassos().catch((error) => {
     console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
   });
+});
+
+process.once("SIGINT", () => {
+  void stopDrassos().finally(() => process.exit(0));
+});
+process.once("SIGTERM", () => {
+  void stopDrassos().finally(() => process.exit(0));
 });
 
 function sendError(res: express.Response, error: unknown): void {

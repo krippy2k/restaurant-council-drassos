@@ -17,5 +17,18 @@ export { loginUserWorkflow, type LoginUserInput, type LoginUserOutput } from "./
 export { logoutUserWorkflow, type LogoutUserInput, type LogoutUserOutput } from "./logoutUser.js";
 export { registerUserWorkflow, type RegisterUserInput, type RegisterUserOutput } from "./registerUser.js";
 export { startCouncilWorkflow, type StartCouncilInput, type StartCouncilOutput } from "./startCouncil.js";
+export {
+  decideRestaurantWorkflow,
+  type DecideRestaurantInput,
+  type DecideRestaurantOutput,
+} from "./decideRestaurant.js";
+export { findMenuLinksAgent } from "./findMenuLinks.js";
 export { negotiateCouncilAgent } from "./negotiator.js";
+export { personalAgent } from "./personalAgent.js";
+export {
+  agentChatRequestWorkflow,
+  councilChatAgent,
+  type AgentChatRequestInput,
+  type AgentChatRequestOutput,
+} from "./agentChat.js";
 export { updateEventWorkflow, type UpdateEventInput } from "./updateEvent.js";

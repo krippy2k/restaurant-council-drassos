@@ -1,5 +1,7 @@
 import type { Preference } from "./domain/types.js";
 import type { PlaceRestaurant } from "./domain/matchRestaurants.js";
+import { menuUrlFromOfficialSources } from "./domain/menuItem.js";
+import { readCachedMenuPageOrFetch } from "./menuDetailsCache.js";
 import {
   assessDietaryEvidence,
   dietaryRequirementsFromPreferences,
@@ -37,7 +39,11 @@ async function lookupDietaryFromSources<T extends PlaceRestaurant>(
   return Promise.all(
     restaurants.map(async (restaurant) => {
       try {
-        const sources = restaurant.website ? await officialSourceTexts(restaurant.website) : [];
+        const sources = restaurant.website
+          ? await officialSourceTexts(restaurant.website, restaurant.menuUrl)
+          : restaurant.menuUrl
+            ? await officialSourceTexts(restaurant.menuUrl, restaurant.menuUrl)
+            : [];
         const assessments = requirements.map((requirement) =>
           assessDietaryEvidence({
             restaurantId: restaurant.placeId,
@@ -45,7 +51,11 @@ async function lookupDietaryFromSources<T extends PlaceRestaurant>(
             evidence: evidenceForRequirement(restaurant, requirement, sources),
           }),
         );
-        return { ...restaurant, dietaryAssessments: assessments };
+        return {
+          ...restaurant,
+          dietaryAssessments: assessments,
+          menuUrl: restaurant.menuUrl ?? menuUrlFromOfficialSources(sources),
+        };
       } catch {
         return {
           ...restaurant,
@@ -132,7 +142,7 @@ type OfficialSourceText = {
   sourceName: string;
 };
 
-async function officialSourceTexts(website: string): Promise<OfficialSourceText[]> {
+async function officialSourceTexts(website: string, menuUrl?: string): Promise<OfficialSourceText[]> {
   const sources: OfficialSourceText[] = [];
   const homepage = await fetchWebsiteText(website);
   if (homepage) {
@@ -162,6 +172,18 @@ async function officialSourceTexts(website: string): Promise<OfficialSourceText[
   } catch {
     // Keep homepage text if extra paths cannot be resolved.
   }
+  const explicitMenu = menuUrl?.trim();
+  if (explicitMenu && !sources.some((item) => item.sourceUrl === explicitMenu)) {
+    const menuText = await fetchWebsiteText(explicitMenu);
+    if (menuText) {
+      sources.unshift({
+        text: menuText,
+        sourceType: "official-menu",
+        sourceUrl: explicitMenu,
+        sourceName: "the menu",
+      });
+    }
+  }
   return sources;
 }
 
@@ -175,6 +197,10 @@ export async function fetchOfficialRestaurantText(website: string): Promise<stri
 }
 
 async function fetchWebsiteText(url: string): Promise<string | null> {
+  return readCachedMenuPageOrFetch(url, fetchWebsiteTextUncached);
+}
+
+async function fetchWebsiteTextUncached(url: string): Promise<string | null> {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {

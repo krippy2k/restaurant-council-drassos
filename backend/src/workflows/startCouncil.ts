@@ -6,7 +6,11 @@ import {
   type NegotiationDraft,
 } from "../domain/negotiate.js";
 import { attachDietaryAssessments } from "../dietaryLookup.js";
+import { harvestMenuLinks } from "../menuDiscovery.js";
+import { rememberMenuDetails } from "../menuDetailsCache.js";
+import { applyMenuLinkPicks, MenuLinksDraft } from "../domain/menuLinks.js";
 import { attachUserScores, hardConstraintsForEvent, keepMatchingRestaurants, type CouncilParticipant, type CouncilRestaurant } from "../domain/matchRestaurants.js";
+import { applyPersonalScore, inputForPersonalAgent, type PersonalScoreDraft } from "../domain/personalScore.js";
 import { getEventById } from "../events.js";
 import { listPendingInvitationsForUser } from "../invitations.js";
 import { isEventMember, listJoinedMembers } from "../members.js";
@@ -15,8 +19,11 @@ import { listEventPreferences } from "../preferences.js";
 import { getRestaurantsForEvent, saveRestaurantSearch } from "../restaurants.js";
 import { setCouncilProgress } from "../councilProgress.js";
 import { getUserById } from "../users.js";
+import { mergeRestaurantDecisions } from "../domain/restaurantDecision.js";
 import { mergeRestaurantVerifications } from "../domain/verifyConstraint.js";
+import { findMenuLinksAgent } from "./findMenuLinks.js";
 import { negotiateCouncilAgent } from "./negotiator.js";
+import { personalAgent } from "./personalAgent.js";
 
 export type StartCouncilInput = {
   eventId: string;
@@ -31,6 +38,10 @@ export type StartCouncilOutput = {
 export const startCouncilWorkflow = workflow<StartCouncilInput, StartCouncilOutput>("start-council", async (ctx) => {
   const eventId = ctx.input.eventId;
   await report(eventId, "Council Clerk", "Load event");
+  const previousRestaurants = await ctx.step("load-previous-results", async () => {
+    const search = await getRestaurantsForEvent(eventId);
+    return search?.restaurants ?? [];
+  });
   await ctx.step("clear-results", async () =>
     saveRestaurantSearch({
       eventId,
@@ -72,24 +83,63 @@ export const startCouncilWorkflow = workflow<StartCouncilInput, StartCouncilOutp
   );
   await report(eventId, "Council Clerk", "Load constraints");
   const preferences = await ctx.step("load-constraints", async () => listEventPreferences(event.id));
-  await report(eventId, "Personal Agents", "Filter mismatches");
+
+  await report(eventId, "Council Clerk", "Filter mismatches");
   const matched = await ctx.step("filter-restaurants", async () =>
     keepMatchingRestaurants(places, hardConstraintsForEvent(event, preferences)),
   );
+
   await report(eventId, "Scout", "Restaurant hours and photos");
   const withHours = await ctx.step("load-hours", async () => loadHoursAndPhotos(matched));
+
+  await report(eventId, "Menu Scout", "Find menu pages");
+  const harvested = await ctx.step("harvest-menu-links", async () => harvestMenuLinks(withHours));
+  let withMenus = harvested.restaurants;
+  if (harvested.agentInput.restaurants.length > 0) {
+    try {
+      const draft = await ctx.agent.run(findMenuLinksAgent, {
+        input: JSON.parse(JSON.stringify(harvested.agentInput)),
+      });
+      withMenus = applyMenuLinkPicks(harvested.restaurants, draft as MenuLinksDraft, harvested.allowed);
+    } catch {
+      withMenus = harvested.restaurants;
+    }
+  }
+  await ctx.step("cache-menu-details", async () => rememberMenuDetails(withMenus));
+
   await report(eventId, "Dietary Analyzer", "Menus, website, and reviews");
-  const withDietary = await ctx.step("lookup-dietary", async () => attachDietaryAssessments(withHours, preferences));
-  await report(eventId, "Personal Agents", "Score restaurants");
-  const scored = await ctx.step("score-restaurants", async () => {
-    const participants = await listEventParticipants(event.id, event.ownerId, preferences.map((item) => item.userId));
-    return attachUserScores(
+  const withDietary = await ctx.step("lookup-dietary", async () => attachDietaryAssessments(withMenus, preferences));
+
+  const participants = await ctx.step("load-participants", async () =>
+    listEventParticipants(event.id, event.ownerId, preferences.map((item) => item.userId)),
+  );
+  let scored = await ctx.step("score-restaurants", async () =>
+    attachUserScores(
       withDietary.map((restaurant) => ({ ...restaurant, matched: true as const })),
       participants,
       preferences,
       event,
-    );
-  });
+    ),
+  );
+  if (scored.length > 0) {
+    for (const participant of participants) {
+      await report(eventId, "Personal Agent", participant.name);
+      try {
+        const draft = await ctx.agent.run<PersonalScoreDraft>(personalAgent, {
+          name: `personal-agent-${participant.id}`,
+          input: JSON.parse(JSON.stringify(inputForPersonalAgent(participant, preferences, scored))),
+        });
+        scored = applyPersonalScore(scored, participant, draft);
+      } catch {
+        // Keep the deterministic score for this person when the model fails.
+      }
+    }
+  }
+  scored = mergeRestaurantDecisions(
+    mergeRestaurantVerifications(scored, previousRestaurants),
+    previousRestaurants,
+  );
+
   let restaurants = applyNegotiatorPicks(scored, { picks: [], scores: [] });
   if (scored.length > 0) {
     await report(eventId, "Negotiator", "Language model");
@@ -110,10 +160,9 @@ export const startCouncilWorkflow = workflow<StartCouncilInput, StartCouncilOutp
       restaurants = applyNegotiatorPicks(scored, { picks: [], scores: [] });
     }
   }
+  
   await report(eventId, "Council Clerk", "Save results");
   const searchedAt = ctx.now().toISOString();
-  const previous = await getRestaurantsForEvent(event.id);
-  restaurants = mergeRestaurantVerifications(restaurants, previous?.restaurants ?? []);
   await ctx.step("save-results", async () =>
     saveRestaurantSearch({
       eventId: event.id,

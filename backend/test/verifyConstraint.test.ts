@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyVerificationToCheck,
+  councilVerificationChat,
   mergeRestaurantVerifications,
   verificationSummary,
 } from "../src/domain/verifyConstraint.ts";
@@ -23,6 +24,15 @@ describe("constraint verification", () => {
         notes: "Shared fryer.",
       }),
     ).toBe("Does not meet this constraint, verified via Email by Ada. Shared fryer.");
+    expect(
+      councilVerificationChat({
+        userName: "Gerald Fishel",
+        restaurantName: "Noodle Shop",
+        constraintLabel: "Gluten free",
+        result: "meets",
+        method: "phone",
+      }),
+    ).toBe("Gerald Fishel confirmed Gluten free at Noodle Shop via Phone.");
   });
 
   it("keeps human verifications when Council runs again", () => {

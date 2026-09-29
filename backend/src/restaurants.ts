@@ -1,8 +1,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { eventChat } from "./tools/chat.js";
 import type { CouncilRestaurant } from "./domain/matchRestaurants.js";
-import { applyVerificationToCheck, verificationSummary, type ConstraintContactMethod, type ConstraintVerificationResult } from "./domain/verifyConstraint.js";
+import {
+  applyRestaurantDecision,
+  type RestaurantDecisionKind,
+} from "./domain/restaurantDecision.js";
+import { applyVerificationToCheck, councilVerificationChat, verificationSummary, type ConstraintContactMethod, type ConstraintVerificationResult } from "./domain/verifyConstraint.js";
 
 export type EventRestaurantSearch = {
   eventId: string;
@@ -107,6 +112,54 @@ export async function addConstraintVerification(input: {
         item.id === check.id ? applyVerificationToCheck(item, verification) : item,
       ),
     };
+    search.restaurants[restaurantIndex] = nextRestaurant;
+    await saveSearches(searches);
+    return { restaurant: nextRestaurant, constraintLabel: check.label };
+  }).then(async ({ restaurant, constraintLabel }) => {
+    await eventChat.execute({
+      eventId: input.eventId,
+      body: councilVerificationChat({
+        userName: input.userName,
+        restaurantName: restaurant.name,
+        constraintLabel,
+        result: input.result,
+        method: input.method,
+        notes: input.notes,
+      }),
+      as: "council",
+    });
+    return restaurant;
+  });
+}
+
+export async function saveRestaurantDecision(input: {
+  eventId: string;
+  placeId: string;
+  userId: string;
+  userName: string;
+  decision: RestaurantDecisionKind;
+  nowIso: string;
+  userConstraintLabels?: string[];
+}): Promise<CouncilRestaurant> {
+  return enqueue(async () => {
+    const searches = await loadSearches();
+    const search = searches.find((item) => item.eventId === input.eventId);
+    if (!search) {
+      throw Object.assign(new Error("Start Council before deciding on a restaurant."), { status: 404 });
+    }
+    const restaurantIndex = search.restaurants.findIndex((item) => item.placeId === input.placeId);
+    const restaurant = search.restaurants[restaurantIndex];
+    if (!restaurant) {
+      throw Object.assign(new Error("That restaurant is not in this Council search."), { status: 404 });
+    }
+    const nextRestaurant = applyRestaurantDecision({
+      restaurant,
+      userId: input.userId,
+      userName: input.userName,
+      decision: input.decision,
+      nowIso: input.nowIso,
+      userConstraintLabels: input.userConstraintLabels,
+    });
     search.restaurants[restaurantIndex] = nextRestaurant;
     await saveSearches(searches);
     return nextRestaurant;

@@ -1,5 +1,14 @@
 import type { EventSearchArea } from "./domain/types.js";
 import type { PlaceRestaurant } from "./domain/matchRestaurants.js";
+import {
+  clearPlaceDetailsCache,
+  getCachedPlaceDetails,
+  putCachedPlaceDetails,
+  setPlaceDetailsCacheTtlMs,
+  PLACE_DETAILS_CACHE_TTL_MS,
+} from "./placeDetailsCache.js";
+
+export { clearPlaceDetailsCache, setPlaceDetailsCacheTtlMs, PLACE_DETAILS_CACHE_TTL_MS };
 
 export type NearbySearch = (area: EventSearchArea) => Promise<PlaceRestaurant[]>;
 
@@ -19,6 +28,7 @@ export type PlaceHoursLoader = (placeId: string) => Promise<PlaceHoursAndPhoto>;
 
 let searcher: NearbySearch = searchGooglePlaces;
 let hoursLoader: PlaceHoursLoader = fetchGoogleHoursAndPhoto;
+const inflightDetails = new Map<string, Promise<PlaceHoursAndPhoto>>();
 
 export function setNearbyRestaurantSearch(next: NearbySearch | undefined): void {
   searcher = next ?? searchGooglePlaces;
@@ -87,7 +97,7 @@ export async function loadHoursAndPhotos<T extends PlaceRestaurant>(places: T[])
   return Promise.all(
     places.map(async (place) => {
       try {
-        const extra = await hoursLoader(place.placeId);
+        const extra = await loadDetails(place.placeId);
         return {
           ...place,
           photoUrl: extra.photoUrl ?? place.photoUrl,
@@ -105,6 +115,28 @@ export async function loadHoursAndPhotos<T extends PlaceRestaurant>(places: T[])
       }
     }),
   );
+}
+
+async function loadDetails(placeId: string): Promise<PlaceHoursAndPhoto> {
+  const id = placeId.replace(/^places\//, "");
+  const cached = await getCachedPlaceDetails(id);
+  if (cached) {
+    return cached;
+  }
+  const pending = inflightDetails.get(id);
+  if (pending) {
+    return pending;
+  }
+  const request = hoursLoader(placeId)
+    .then(async (details) => {
+      await putCachedPlaceDetails(id, details);
+      return details;
+    })
+    .finally(() => {
+      inflightDetails.delete(id);
+    });
+  inflightDetails.set(id, request);
+  return request;
 }
 
 async function fetchGoogleHoursAndPhoto(placeId: string): Promise<PlaceHoursAndPhoto> {

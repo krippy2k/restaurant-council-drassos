@@ -18,6 +18,9 @@ export function mergeExplanations(computed: string[], proposed: string[]): strin
   );
   const merged = [...computed];
   for (const extra of extras) {
+    if (extra === "Within everyone's hard constraints" && !computed.includes(extra)) {
+      continue;
+    }
     if (!merged.includes(extra)) {
       merged.push(extra);
     }
@@ -34,7 +37,10 @@ export function councilScoreFor(restaurant: CouncilRestaurant): number {
 }
 
 export function computedExplanations(restaurant: CouncilRestaurant): string[] {
-  const explanations: string[] = ["Within everyone's hard constraints"];
+  const explanations: string[] = [];
+  if (allHardConstraintsConfirmed(restaurant)) {
+    explanations.push("Within everyone's hard constraints");
+  }
   const scores = restaurant.userScores ?? [];
   const strong = scores.filter((item) => item.score >= 85).length;
   if (scores.length > 0 && strong > 0) {
@@ -50,6 +56,17 @@ export function computedExplanations(restaurant: CouncilRestaurant): string[] {
     explanations.push("Kid friendly");
   }
   return explanations;
+}
+
+function allHardConstraintsConfirmed(restaurant: CouncilRestaurant): boolean {
+  const checks = restaurant.constraintChecks ?? [];
+  const privateHardOpen = (restaurant.constraintFlags ?? []).some(
+    (flag) => flag.label === "A private constraint",
+  );
+  if (privateHardOpen || checks.length === 0) {
+    return false;
+  }
+  return checks.every((item) => item.confirmed);
 }
 
 export type NegotiatorPick = {
